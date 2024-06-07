@@ -248,7 +248,7 @@ function fastest_path(start::Vector{Float64}, stop::Vector{Float64}, radii::Vect
     alfa, beta, dist = rotate_points(start, stop)
 
     # get all possible combinations + best possible radius by the speeds
-    radii_pairs = push!(possible_tuples(radii), (radius_by_speed(speeds[1]), radius_by_speed(speeds[2])))
+    radii_pairs = push!(possible_tuples(radii), [radius_by_speed(speeds[1]), radius_by_speed(speeds[2])])
 
     best_time = Inf
     best_len = Inf
