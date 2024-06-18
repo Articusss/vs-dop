@@ -6,7 +6,6 @@ module VsDop
     include("Visual.jl")
     include("Helper.jl")
     include("Vns.jl")
-    include("FastReject.jl")
 
     struct VehicleParameters
         v_min::Float64
@@ -71,15 +70,14 @@ module VsDop
         return VehicleParameters(30., 67., -3., 2., 65.7, 264.2)
     end
 
-    function vns_tsp(graph::Array{Float64, 6}, instance_path::String, vehicle_params, graph_params, max_iterations::Int64 = 2000, verbose::Bool = false)
-        _, initial_seq, _ = greedy_solution(graph)
-        vns_seq, time = variable_neighborhood_search_fast(graph, initial_seq, max_iterations, num_windows, verbose)
+    function vsdop(op_params, max_iterations::Int64 = 2000, verbose::Bool = false)
+        initial_seq, _ = greedy_solution(op_params)
+        vns_seq, time, score = variable_neighborhood_search(op_params, initial_seq, max_iterations, verbose)
 
-        points = Helper.read_tsp_file(instance_path)
-        _, config = Helper.shortest_configuration_by_sequence(graph, vns_seq)
-        path, _ = Helper.retrieve_path(points, config, params, speeds, headings, radii)
+        config = Helper.shortest_configuration_by_sequence(op_params, vns_seq)
+        path, _ = Helper.retrieve_path(op_params, config)
 
-        return path, points, config
+        return path, config, score, time
     end
 
     #TODO not calculate matrix diagonals (distance from the point to itself) can speed up
@@ -163,74 +161,63 @@ module VsDop
     end
 
     #BASE VNS -> no fast reject
-    function variable_neighborhood_search(graph::Array{Float64, 6}, initial_sequence::Vector{Int64}, max_iterations::Int64, verbose::Bool = false)
-        best_time = Helper.shortest_time_by_sequence(graph, initial_sequence)
+    function variable_neighborhood_search(op_params, initial_sequence::Vector{Int64}, max_iterations::Int64, verbose::Bool = false)
+        best_time = Helper.shortest_time_by_sequence(op_params, initial_sequence)
         best_sequence = deepcopy(initial_sequence)
+        best_score = Helper.get_score(op_params, initial_sequence)
         len = length(initial_sequence)
 
         for i in 1:max_iterations
             if verbose
-                println((i, best_time))
+                println((i, best_time, best_score))
             end
-            #Shake
-            local_sequence = rand([Vns.path_exchange, Vns.path_move])(deepcopy(best_sequence))
-            local_time = Helper.shortest_time_by_sequence(graph, local_sequence)
 
-            #Search
-            for j in 1:len^2
-                search = Vns.rand([Vns.one_point_move, Vns.open_point_exchange])(deepcopy(local_sequence))
-                search_time = Helper.shortest_time_by_sequence(graph, search)
+            l = 1
+            while l <= 2 
+                #Shake
+                local_sequence = Vns.shake(deepcopy(best_sequence), l)
+                local_time = Helper.shortest_time_by_sequence(op_params, local_sequence)
+                local_score = Helper.get_score(op_params, local_sequence)
 
-                if search_time < local_time
-                    local_time = search_time
-                    local_sequence = search
+                #Search
+                for j in 1:len^2
+                    search = Vns.search(deepcopy(best_sequence), l)
+                    search_score = Helper.get_score(op_params, search)
+                    #Only check time if solutions score higher OR local_sequence is not valid
+                    if search_score > local_score || local_time > op_params.tmax
+                        search_time = Helper.shortest_time_by_sequence(op_params, search)
+                        #println((search_score, local_score, search_time))
+                        if search_time <= op_params.tmax
+                            local_time = search_time
+                            local_sequence = search
+                            local_score = search_score
+                        end
+                    elseif search_score == local_score # If score is equal, check if path is better
+                        search_time = Helper.shortest_time_by_sequence(op_params, search)
+                        if search_time < local_time 
+                            local_time = search_time
+                            local_sequence = search
+                            local_score = search_score
+                        end
+                    end
                 end
-            end
 
-            if local_time < best_time
-                best_time = local_time
-                best_sequence = local_sequence
+                #Higher score is found, only thing that matters is TMAX
+                if local_time <= op_params.tmax && local_score > best_score
+                    best_time = local_time
+                    best_sequence = local_sequence
+                    best_score = local_score
+                #Equal score is found, swap if time is better
+                elseif local_score == best_score && local_time < best_time
+                    best_time = local_time
+                    best_sequence = local_sequence
+                    best_score = local_score
+                else
+                    l += 1
+                end
             end
         end
 
-
-        return best_sequence, best_time
-    end
-
-    #VNS with fast reject
-    function variable_neighborhood_search_fast(graph::Array{Float64, 6}, initial_sequence::Vector{Int64}, max_iterations::Int64, num_windows::Int64, verbose::Bool = false)
-        best_time = Helper.shortest_time_by_sequence(graph, initial_sequence)
-        best_sequence = deepcopy(initial_sequence)
-        len = length(initial_sequence)
-        stored = fill(-1., (len,len))
-
-        for i in 1:max_iterations
-            if verbose
-                println((i, best_time))
-            end
-            #Shake
-            local_sequence = rand([Vns.path_exchange, Vns.path_move])(deepcopy(best_sequence))
-            local_costs::Vector{Float64} = fill(-1., num_windows)
-            
-            #Search
-            for j in 1:len^2
-                search = Vns.rand([Vns.one_point_move, Vns.open_point_exchange])(deepcopy(local_sequence))
-
-                reject, costs = FastReject.fast_reject(graph, search, local_sequence, local_costs, num_windows, stored, best_time)
-                if !reject
-                    local_sequence = search
-                    local_costs = costs
-                end
-            end
-
-            local_time = Helper.shortest_time_by_sequence(graph, local_sequence)
-            if local_time < best_time
-                best_time = local_time
-                best_sequence = local_sequence
-            end
-        end
-
-
-        return best_sequence, best_time
+        return best_sequence, best_time, best_score
     end
 end # module VsTsp

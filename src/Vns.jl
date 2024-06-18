@@ -62,13 +62,12 @@ module Vns
         while new_idx == idx
             new_idx = rand(2:len)
         end
-
         insert!(sequence, new_idx, val)
 
         return sequence
     end
 
-    function open_point_exchange(sequence::Vector{Int64})
+    function one_point_exchange(sequence::Vector{Int64})
         len = length(sequence)
         if len <= 2 #Cant apply operator since first index cannot be moved
             return sequence
@@ -84,5 +83,21 @@ module Vns
         sequence[idx1], sequence[idx2] = sequence[idx2], sequence[idx1]
 
         return sequence
+    end
+
+    function shake(sequence::Vector{Int64}, l::Int64)
+        if l == 1
+            return path_move(sequence)
+        else
+            return path_exchange(sequence)
+        end
+    end
+
+    function search(sequence::Vector{Int64}, l::Int64)
+        if l == 1
+            return one_point_move(sequence)
+        else
+            return one_point_exchange(sequence)
+        end
     end
 end

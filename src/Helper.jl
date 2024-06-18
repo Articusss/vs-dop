@@ -90,6 +90,19 @@ module Helper
         return total_time
     end
 
+    function get_score(op_params, sequence::Vector{Int64})
+        depot = op_params.depots[1]
+        total_score = 0
+        #Depot does not have score
+        i = 2
+        while sequence[i] != depot
+            total_score += op_params.scores[sequence[1]]
+            i += 1
+        end
+
+        return total_score
+    end
+
     #Forward graph search
     function shortest_time_by_sequence(op_params, sequence::Vector{Int64})
         num_headings = op_params.graph.num_headings
@@ -181,7 +194,6 @@ module Helper
             pos += 1
         end
 
-        println(findmin(prev)[2])
         return prev_configs[findmin(prev)[2]]
     end
 end
