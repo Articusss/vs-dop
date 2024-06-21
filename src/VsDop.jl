@@ -198,7 +198,6 @@ module VsDop
                         #"Borrow" distances from local sequence
                         distances_cand[1:change_pos-1, :, :], distances[1:change_pos-1, :, :] = distances[1:change_pos-1, :, :], distances_cand[1:change_pos-1, :, :]
                         search_time, cand_depot_pos = Helper.shortest_time_by_sequence(op_params, search, distances_cand, change_pos - 1)
-                        #search_time = Helper.shortest_time_by_sequence(op_params, search)
                         
                         if (search_score > local_score && search_time <= op_params.tmax) || (search_score == local_score && search_time < local_time) 
                             local_time = search_time
