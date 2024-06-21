@@ -96,7 +96,7 @@ module Helper
         #Depot does not have score
         i = 2
         while sequence[i] != depot
-            total_score += op_params.scores[sequence[1]]
+            total_score += op_params.scores[sequence[i]]
             i += 1
         end
 
@@ -145,6 +145,48 @@ module Helper
         end
 
         return minimum(prev)[1]
+    end
+
+    #Like the original function, but with a bit of dynamic programming
+    function shortest_time_by_sequence(op_params, sequence::Vector{Int64}, distances::Array{Tuple{Float64, Bool}, 3}, starting_pos::Int = 1)
+        num_headings = op_params.graph.num_headings
+        num_speeds = op_params.graph.num_speeds
+        graph = op_params.graph.graph
+        depot = op_params.depots[1]
+
+        #Validates value, to remove necessity of creating new matrix everytime this runs
+        depot_found = false
+        pos = starting_pos
+        #Update best path for pos + 1, starting from second position
+        while !depot_found
+            curr_node = sequence[pos + 1]
+            prev_node = sequence[pos]
+            depot_found = curr_node == depot
+            valid = !distances[pos+1, 1, 1][2]
+            for (prev_speed, curr_speed) in itr.product(1:num_speeds, 1:num_speeds)
+                for (prev_heading, curr_heading) in itr.product(1:num_headings, 1:num_headings)
+                    #Not valid, assign first value for future comparisons
+                    if distances[pos + 1, curr_speed, curr_heading][2] != valid
+                        distances[pos + 1, curr_speed, curr_heading] = (distances[pos, prev_speed,prev_heading][1] + graph[prev_node, curr_node, prev_speed, curr_speed, prev_heading, curr_heading], valid)
+                    else
+                        #Valid, compare with previously calculated value
+                        val = distances[pos, prev_speed,prev_heading][1] + graph[prev_node, curr_node, prev_speed, curr_speed, prev_heading, curr_heading]
+                        if val < distances[pos+1, curr_speed, curr_heading][1]
+                            distances[pos+1, curr_speed, curr_heading] = (val, valid)
+                        end
+                    end
+                end
+            end
+
+            if minimum(distances[pos + 1, :, :])[1] > op_params.tmax
+                return Inf, -1
+            end
+        
+            pos += 1
+        end
+    
+        #Pos is now depot, also return it
+        return minimum(distances[pos, :, :])[1], pos
     end
 
     function shortest_configuration_by_sequence(op_params, sequence::Vector{Int64})

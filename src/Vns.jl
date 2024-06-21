@@ -64,7 +64,7 @@ module Vns
         end
         insert!(sequence, new_idx, val)
 
-        return sequence
+        return sequence, min(new_idx, idx)
     end
 
     function one_point_exchange(sequence::Vector{Int64})
@@ -82,7 +82,7 @@ module Vns
 
         sequence[idx1], sequence[idx2] = sequence[idx2], sequence[idx1]
 
-        return sequence
+        return sequence, min(idx1, idx2)
     end
 
     function shake(sequence::Vector{Int64}, l::Int64)

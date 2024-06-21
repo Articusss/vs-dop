@@ -1,11 +1,11 @@
 module VsDop
     import IterTools as itr
-    import Plots as plt
     using Random
     include("AcceleratedDubins.jl")
     include("Visual.jl")
     include("Helper.jl")
     include("Vns.jl")
+    using Dates
 
     struct VehicleParameters
         v_min::Float64
@@ -30,7 +30,8 @@ module VsDop
             num_headings = 8
             radii_samples = 8
 
-            speeds = collect(range(v_params.v_min, AcceleratedDubins.speed_by_radius(v_params.r_max), num_speeds))
+            max_speed_discrete = min(v_params.v_max, AcceleratedDubins.speed_by_radius(v_params.r_max))
+            speeds = collect(range(v_params.v_min, max_speed_discrete, num_speeds))
             headings = collect(range(0, 2 * pi, num_headings))
             radii = AcceleratedDubins.radii_samples_exp(v_params.r_min, v_params.r_max, radii_samples)
             graph = fill(-1, (num_locations, num_locations, num_speeds, num_speeds, num_headings, num_headings))
@@ -39,7 +40,8 @@ module VsDop
         end
 
         function DOPGraph(num_speeds, num_headings, radii_samples, num_locations, v_params)
-            speeds = collect(range(v_params.v_min, AcceleratedDubins.speed_by_radius(v_params.r_max), num_speeds))
+            max_speed_discrete = min(v_params.v_max, AcceleratedDubins.speed_by_radius(v_params.r_max))
+            speeds = collect(range(v_params.v_min, max_speed_discrete, num_speeds))
             headings = collect(range(0, 2 * pi, num_headings))
             radii = AcceleratedDubins.radii_samples_exp(v_params.r_min, v_params.r_max, radii_samples)
             graph = fill(-1, (num_locations, num_locations, num_speeds, num_speeds, num_headings, num_headings))
@@ -75,7 +77,7 @@ module VsDop
         vns_seq, time, score = variable_neighborhood_search(op_params, initial_seq, max_iterations, verbose)
 
         config = Helper.shortest_configuration_by_sequence(op_params, vns_seq)
-        path, _ = Helper.retrieve_path(op_params, config)
+        path = Helper.retrieve_path(op_params, config)
 
         return path, config, score, time
     end
@@ -114,9 +116,6 @@ module VsDop
     end
 
     function greedy_solution(op_params)
-        num_headings = op_params.graph.num_headings
-        num_speeds = op_params.graph.num_speeds
-        
         sequence = [op_params.depots[1], op_params.depots[1]]
         seq_time = Helper.shortest_time_by_sequence(op_params, sequence)
         to_add = Set{Int64}(1:length(op_params.coordinates))
@@ -130,7 +129,6 @@ module VsDop
             best_point = -1
             new_time = -1
 
-            #Find cheapest insertion -> Try to insert each node between every point in solution, select the best position and insert
             for candidate in to_add
                 for pos in 2:length(sequence)
                     cand_sequence = insert!(deepcopy(sequence), pos, candidate)
@@ -167,6 +165,10 @@ module VsDop
         best_score = Helper.get_score(op_params, initial_sequence)
         len = length(initial_sequence)
 
+        #For dynamic programming
+        distances = fill((0., false), (length(op_params.coordinates) + 1, op_params.graph.num_speeds, op_params.graph.num_headings))
+        distances_cand = fill((0., false), (length(op_params.coordinates) + 1, op_params.graph.num_speeds, op_params.graph.num_headings))
+        
         for i in 1:max_iterations
             if verbose
                 println((i, best_time, best_score))
@@ -176,28 +178,39 @@ module VsDop
             while l <= 2 
                 #Shake
                 local_sequence = Vns.shake(deepcopy(best_sequence), l)
-                local_time = Helper.shortest_time_by_sequence(op_params, local_sequence)
+                local_time, depot_pos = Helper.shortest_time_by_sequence(op_params, local_sequence, distances)
                 local_score = Helper.get_score(op_params, local_sequence)
 
                 #Search
                 for j in 1:len^2
-                    search = Vns.search(deepcopy(best_sequence), l)
+                    search, change_pos = Vns.search(deepcopy(local_sequence), l)
+
+                    #If change is done above depot, nothing has happened and can be skipped
+                    if (change_pos > depot_pos) 
+                        j -= 1 #Run again
+                        continue
+                    end
+                    
                     search_score = Helper.get_score(op_params, search)
+
                     #Only check time if solutions score higher OR local_sequence is not valid
-                    if search_score > local_score || local_time > op_params.tmax
-                        search_time = Helper.shortest_time_by_sequence(op_params, search)
-                        #println((search_score, local_score, search_time))
-                        if search_time <= op_params.tmax
+                    if (search_score >= local_score) || (local_time > op_params.tmax) 
+                        #"Borrow" distances from local sequence
+                        distances_cand[1:change_pos-1, :, :], distances[1:change_pos-1, :, :] = distances[1:change_pos-1, :, :], distances_cand[1:change_pos-1, :, :]
+                        search_time, cand_depot_pos = Helper.shortest_time_by_sequence(op_params, search, distances_cand, change_pos - 1)
+                        #search_time = Helper.shortest_time_by_sequence(op_params, search)
+                        
+                        if (search_score > local_score && search_time <= op_params.tmax) || (search_score == local_score && search_time < local_time) 
                             local_time = search_time
                             local_sequence = search
                             local_score = search_score
-                        end
-                    elseif search_score == local_score # If score is equal, check if path is better
-                        search_time = Helper.shortest_time_by_sequence(op_params, search)
-                        if search_time < local_time 
-                            local_time = search_time
-                            local_sequence = search
-                            local_score = search_score
+                            depot_pos = cand_depot_pos
+                            
+                            #Fully swap
+                            distances, distances_cand = distances_cand, distances
+                        else
+                            #Return distances
+                            distances_cand[1:change_pos-1, :, :], distances[1:change_pos-1, :, :] = distances[1:change_pos-1, :, :], distances_cand[1:change_pos-1, :, :]
                         end
                     end
                 end
@@ -207,17 +220,19 @@ module VsDop
                     best_time = local_time
                     best_sequence = local_sequence
                     best_score = local_score
+                    l = 1
                 #Equal score is found, swap if time is better
                 elseif local_score == best_score && local_time < best_time
                     best_time = local_time
                     best_sequence = local_sequence
                     best_score = local_score
+                    l = 1
                 else
                     l += 1
                 end
             end
         end
 
-        return best_sequence, best_time, best_score
+        return best_sequence, best_time, best_score, distances
     end
 end # module VsTsp

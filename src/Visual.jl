@@ -1,9 +1,9 @@
 module Visual
-    import Plots as plt
+    import PyPlot as plt
     using ..AcceleratedDubins
 
     function plot_full_path(positions, paths)
-        p = plt.scatter([x[1] for x in positions], [x[2] for x in positions])
+        plt.scatter([x[1] for x in positions], [x[2] for x in positions])
 
         x, y = [], []
         for (path, v_i, v_f) in paths
@@ -11,12 +11,11 @@ module Visual
             x = vcat(x, confx)
             y = vcat(y, confy)
         end
-        plt.plot!(p, x, y)
-        plt.display(p)
+        plt.plot(x, y)
+        plt.axis("equal")
     end
 
-    function plot_full_speeds(paths, parameters)
-        p = plt.plot()
+    function plot_full_speeds(parameters, paths)
         params = [parameters.v_min, parameters.v_max, parameters.a_max, -parameters.a_min]
 
         x, y = [], []
@@ -29,7 +28,6 @@ module Visual
             base_time += last(times)
         end
 
-        plt.plot!(p, x, y)
-        plt.display(p)
+        plt.plot(x, y)
     end
 end
