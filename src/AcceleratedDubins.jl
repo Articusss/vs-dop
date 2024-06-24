@@ -354,41 +354,41 @@ Sample single path for plotting
 """
 function sample_path(path::DubinsPathR2, resolution::Float64 = 0.01)
     if path === nothing
-        return Vector{Float64}(), Vector{Float64}()
+        return Vector{Vector{Float64}}(), Vector{Vector{Float64}}()
     else
-        confx::Vector{Float64} = []
-        confy::Vector{Float64} = []
+        confx::Vector{Vector{Float64}} = [[], [], []]
+        confy::Vector{Vector{Float64}} = [[], [], []]
 
         # Sample first arc
         for l in 0.:resolution:path.lengths[1]
             x, y, _ = get_configuration(path, l)
-            push!(confx, x)
-            push!(confy, y)
+            push!(confx[1], x)
+            push!(confy[1], y)
         end
 
         # Add last point of first arch
         x, y, theta = get_configuration(path, path.lengths[1])
-        push!(confx, x)
-        push!(confy, y)
+        push!(confx[2], x)
+        push!(confy[2], y)
 
         # Sample line segment
         x, y = point_by_angle([x, y], theta, path.lengths[2])       
-        push!(confx, x)
-        push!(confy, y)
+        push!(confx[2], x)
+        push!(confy[2], y)
 
         # Sample third segment
         s3_start = path.lengths[1] + path.lengths[2]
         s3_end = sum(path.lengths)
         for l in s3_start:resolution:s3_end
             x, y, _ = get_configuration(path, l)
-            push!(confx, x)
-            push!(confy, y)
+            push!(confx[3], x)
+            push!(confy[3], y)
         end
 
         # Add last point of third arch
         x, y, theta = get_configuration(path, s3_end)
-        push!(confx, x)
-        push!(confy, y)
+        push!(confx[3], x)
+        push!(confy[3], y)
 
         return confx, confy
     end

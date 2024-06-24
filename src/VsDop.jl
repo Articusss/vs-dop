@@ -5,7 +5,6 @@ module VsDop
     include("Visual.jl")
     include("Helper.jl")
     include("Vns.jl")
-    using Dates
 
     struct VehicleParameters
         v_min::Float64
@@ -72,8 +71,12 @@ module VsDop
         return VehicleParameters(30., 67., -3., 2., 65.7, 264.2)
     end
 
-    function vsdop(op_params, max_iterations::Int64 = 2000, verbose::Bool = false)
-        initial_seq, _ = greedy_solution(op_params)
+    function vs_dop(op_params, max_iterations::Int64 = 2000, verbose::Bool = false)
+        initial_seq, ini_time, ini_score = greedy_solution(op_params)
+        if verbose
+            println("Initial Score: ", ini_score, ". Initial time: ", ini_time)
+        end
+
         vns_seq, time, score = variable_neighborhood_search(op_params, initial_seq, max_iterations, verbose)
 
         config = Helper.shortest_configuration_by_sequence(op_params, vns_seq)
@@ -100,7 +103,8 @@ module VsDop
         vehicle_params = graph_params.vehicle_params
         params = [vehicle_params.v_min, vehicle_params.v_max, vehicle_params.a_max, -vehicle_params.a_min]
         
-        for (node_i, node_f) in itr.product(1:num_locations, 1:num_locations)
+        Threads.@threads for node_i in 1:num_locations
+            for node_f in 1:num_locations
             for (v_i, v_f) in itr.product(1:num_speeds, 1:num_speeds)
                 for (h_i, h_f) in itr.product(1:num_headings, 1:num_headings)
                     start::Vector{Float64} = [locations[node_i][1], locations[node_i][2], headings[h_i]]
@@ -110,6 +114,7 @@ module VsDop
                     graph[node_i,node_f,v_i,v_f,h_i,h_f] = path === nothing ? Inf : time
                 end
             end
+        end
         end
 
         return graph_params
@@ -155,7 +160,7 @@ module VsDop
         #Randomly add rest of nodes
         sequence = vcat(sequence, shuffle(collect(to_add)))
 
-        return sequence, seq_time
+        return sequence, seq_time, Helper.get_score(op_params, sequence)
     end
 
     #BASE VNS -> no fast reject
