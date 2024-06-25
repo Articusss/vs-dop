@@ -57,6 +57,12 @@ module VsDop
         tmax::Float64
     end
 
+    mutable struct Results
+        scores::Vector{Float64}
+        travel_times::Vector{Float64}
+        timestamps::Vector{Float64}
+    end
+
     function get_graph(instance_path::String, vehicle_params, graph_params = nothing)
         points, scores, depots, tmax = Helper.read_op_file(instance_path)
         
@@ -103,7 +109,7 @@ module VsDop
         vehicle_params = graph_params.vehicle_params
         params = [vehicle_params.v_min, vehicle_params.v_max, vehicle_params.a_max, -vehicle_params.a_min]
         
-        Threads.@threads for node_i in 1:num_locations
+        @Threads.threads for node_i in 1:num_locations
             for node_f in 1:num_locations
             for (v_i, v_f) in itr.product(1:num_speeds, 1:num_speeds)
                 for (h_i, h_f) in itr.product(1:num_headings, 1:num_headings)
@@ -163,7 +169,7 @@ module VsDop
         return sequence, seq_time, Helper.get_score(op_params, sequence)
     end
 
-    #BASE VNS -> no fast reject
+    #BASE VNS
     function variable_neighborhood_search(op_params, initial_sequence::Vector{Int64}, max_iterations::Int64, verbose::Bool = false)
         best_time = Helper.shortest_time_by_sequence(op_params, initial_sequence)
         best_sequence = deepcopy(initial_sequence)
@@ -237,6 +243,148 @@ module VsDop
             end
         end
 
-        return best_sequence, best_time, best_score, distances
+        return best_sequence, best_time, best_score
+    end
+
+    #VNS WITH BENCHMARKING TOOLS
+    function variable_neighborhood_search_benchmark(op_params, initial_sequence::Vector{Int64}, max_time::Int64, results, t0)
+        best_time = Helper.shortest_time_by_sequence(op_params, initial_sequence)
+        best_sequence = deepcopy(initial_sequence)
+        best_score = Helper.get_score(op_params, initial_sequence)
+        len = length(initial_sequence)
+
+        #For dynamic programming
+        distances = fill((0., false), (length(op_params.coordinates) + 1, op_params.graph.num_speeds, op_params.graph.num_headings))
+        distances_cand = fill((0., false), (length(op_params.coordinates) + 1, op_params.graph.num_speeds, op_params.graph.num_headings))
+        
+        initial_time = time()
+        while time() - initial_time <= max_time
+            #Store info
+            if (time() - t0) - results.timestamps[end] > 5
+                push!(results.scores, best_score)
+                push!(results.travel_times, best_time)
+                push!(results.timestamps, time() - t0)
+            end
+
+            l = 1
+            while l <= 2 
+                #Shake
+                local_sequence = Vns.shake(deepcopy(best_sequence), l)
+                local_time, depot_pos = Helper.shortest_time_by_sequence(op_params, local_sequence, distances)
+                local_score = Helper.get_score(op_params, local_sequence)
+
+                #Search
+                for j in 1:len^2
+                    search, change_pos = Vns.search(deepcopy(local_sequence), l)
+
+                    #If change is done above depot, nothing has happened and can be skipped
+                    if (change_pos > depot_pos) 
+                        j -= 1 #Run again
+                        continue
+                    end
+                    
+                    search_score = Helper.get_score(op_params, search)
+
+                    #Only check time if solutions score higher OR local_sequence is not valid
+                    if (search_score >= local_score) || (local_time > op_params.tmax) 
+                        #"Borrow" distances from local sequence
+                        distances_cand[1:change_pos-1, :, :], distances[1:change_pos-1, :, :] = distances[1:change_pos-1, :, :], distances_cand[1:change_pos-1, :, :]
+                        search_time, cand_depot_pos = Helper.shortest_time_by_sequence(op_params, search, distances_cand, change_pos - 1)
+                        
+                        if (search_score > local_score && search_time <= op_params.tmax) || (search_score == local_score && search_time < local_time) 
+                            local_time = search_time
+                            local_sequence = search
+                            local_score = search_score
+                            depot_pos = cand_depot_pos
+                            
+                            #Fully swap
+                            distances, distances_cand = distances_cand, distances
+                        else
+                            #Return distances
+                            distances_cand[1:change_pos-1, :, :], distances[1:change_pos-1, :, :] = distances[1:change_pos-1, :, :], distances_cand[1:change_pos-1, :, :]
+                        end
+                    end
+                end
+
+                #Higher score is found, only thing that matters is TMAX
+                if local_time <= op_params.tmax && local_score > best_score
+                    best_time = local_time
+                    best_sequence = local_sequence
+                    best_score = local_score
+                    l = 1
+                #Equal score is found, swap if time is better
+                elseif local_score == best_score && local_time < best_time
+                    best_time = local_time
+                    best_sequence = local_sequence
+                    best_score = local_score
+                    l = 1
+                else
+                    l += 1
+                end
+            end
+        end
+
+        return best_sequence, best_time, best_score
+    end
+
+    function benchmark(op, num_instances, exec_time)
+        r = []
+        seqs = []
+        best_scores = Vector{Float64}()
+        best_times = Vector{Float64}()
+        for _ in 1:num_instances
+            push!(r, Results([], [], []))
+            push!(seqs, [])
+            push!(best_scores, -1)
+            push!(best_times, -1)
+        end
+        Threads.@threads for i in 1:num_instances
+            #Run algo
+            t0 = time()
+            ini_seq, t = greedy_solution(op)
+            push!(r[i].scores, VsDop.Helper.get_score(op, ini_seq))
+            push!(r[i].travel_times, t)
+            push!(r[i].timestamps, time() - t0)
+
+            #Run vns
+            seq, t, score = variable_neighborhood_search_benchmark(op, ini_seq, exec_time, r[i], t0)
+            seqs[i] = seq
+            best_scores[i] = score
+            best_times[i] = t
+            
+            push!(r[i].scores, score)
+            push!(r[i].travel_times, t)
+            push!(r[i].timestamps, time() - t0)
+        end
+
+        return r, seqs, best_scores, best_times, findmax(best_scores)[2]
+    end
+
+    function bulk_benchmark(configurations, run_per_config, base_path, instance_list, exec_time)
+        #configurations is a vector of (num_speeds, num_heading angles)
+        for inst in instance_list
+            points, scores, depots, tmax = Helper.read_op_file("$base_path/$inst")
+            for (speeds, headings) in configurations
+                graph_params = DOPGraph(speeds, headings, 8, length(points), get_cessna172_params())
+                op = OpParameters(compute_trajectories(points, graph_params), points, scores, depots, tmax)
+                res, best_seqs, best_scores, best_times, best_idx = benchmark(op, run_per_config, exec_time)
+
+                dir = "results/$(speeds)v$(headings)h"
+                isdir(dir) || mkdir(dir)
+                #Write to file
+                
+                f = open("$dir/$inst", "w")
+                println(f, "BEST_SCORE = $(maximum(best_scores))")
+                println(f, "BEST_TIME = $(best_times[best_idx])")
+                println(f, "BEST_SEQ = $(best_seqs[best_idx])")
+                println(f, "SCORES = $best_scores")
+                println(f, "TIMES = $best_times")
+                println(f, "R_BEST_SCORES = $(res[best_idx].scores)")
+                println(f, "R_BEST_TRAVELTIMES = $(res[best_idx].travel_times)")
+                println(f, "R_BEST_TIMESTAMPS = $(res[best_idx].timestamps)")
+                close(f)
+                
+            end
+        end
     end
 end # module VsTsp
