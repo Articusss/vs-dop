@@ -4,6 +4,12 @@ module Visual
     using ..AcceleratedDubins
 
     function filter_values(v, times)
+        #Easiest example
+        if length(v) == 5
+            return v[2:4], times[2:4]
+        elseif length(v) == 4
+            return v[2:4], times[2:4] 
+        end
         res_speed, res_time = [], []
         starting = v[1]
         last_time = times[1]
@@ -59,7 +65,6 @@ module Visual
         peak_distance = starting_speed * (peak_time - starting_time) + (op.graph.vehicle_params.a_max * (peak_time - starting_time)^2) / 2
         mantains_peak = length(speeds) > 3
         peak_stop = peak_distance + peak_speed * (times[3] - peak_time)
-
         speed_at_conf = []
         for i in eachindex(x_points)
             x,y =  x_points[i], y_points[i]
@@ -98,7 +103,6 @@ module Visual
             confx, confy = AcceleratedDubins.sample_path(path)
             times, speeds = AcceleratedDubins.speed_profile(path, params, [v_i, v_f])
             speeds, times = filter_values(speeds, times)
-
             #Plot first curve
             ax.plot(confx[1], confy[1], color=cmap(norm(v_i)))
 
@@ -117,6 +121,7 @@ module Visual
         plt.axis("equal")
 
         scatter = plt.scatter([x[1] for x in op.coordinates], [x[2] for x in op.coordinates], c=op.scores, cmap="viridis", zorder=10)
+        plt.scatter([op.coordinates[1][1]], [op.coordinates[1][2]], zorder=15, c="r", s=75)
         colorbar = plt.colorbar(scatter)
         colorbar.set_label("Reward")
 
