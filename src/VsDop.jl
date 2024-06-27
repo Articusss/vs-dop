@@ -362,14 +362,16 @@ module VsDop
 
     function bulk_benchmark(configurations, run_per_config, base_path, instance_list, exec_time)
         #configurations is a vector of (num_speeds, num_heading angles)
+        #TODO remove temp code
+        vehicle_params = [VehicleParameters(30., 30., -3., 2., 65.7, 264.2), VehicleParameters(66.98, 66.98, -3., 2., 65.7, 264.2)]
         for inst in instance_list
             points, scores, depots, tmax = Helper.read_op_file("$base_path/$inst")
-            for (speeds, headings) in configurations
-                graph_params = DOPGraph(speeds, headings, 8, length(points), get_cessna172_params())
+            for v_params in vehicle_params
+                graph_params = DOPGraph(2, 8, 8, length(points), v_params)
                 op = OpParameters(compute_trajectories(points, graph_params), points, scores, depots, tmax)
                 res, best_seqs, best_scores, best_times, best_idx = benchmark(op, run_per_config, exec_time)
 
-                dir = "results/$(speeds)v$(headings)h"
+                dir = "results/CONST$(v_params.v_max)v"
                 isdir(dir) || mkdir(dir)
                 #Write to file
                 
