@@ -89,14 +89,37 @@ module Visual
         parameters = op.graph.vehicle_params
         params = [parameters.v_min, parameters.v_max, parameters.a_max, -parameters.a_min]
 
-        fig, ax = plt.subplots()
+        FIG_W = 14
+        FIG_H = FIG_W * 9/16
+        
+        fig = plt.figure(figsize=(FIG_W,FIG_H), dpi=100)
+        ax = fig.add_subplot(111, aspect="equal", facecolor="#EAEAF2FF")
+        ax.tick_params(axis="both", which="major", labelsize=16)
+        # ax.tick_params(axis='both', which='minor', labelsize=8)
+        plt.grid(color="w", linestyle="solid")
+
+        ax.set_xlabel("x [m]", fontsize=16)
+        ax.set_ylabel("y [m]", fontsize=16)
+
+        #fig, ax = plt.subplots()
         LineCollection = plt.matplotlib[:collections][:LineCollection]
         np = pyimport("numpy")
 
         speeds = op.graph.speeds
         vmin, vmax = minimum(speeds), maximum(speeds)
         norm = plt.matplotlib[:pyplot][:Normalize](vmin=vmin, vmax=vmax)
-        cmap = plt.get_cmap("viridis")
+        #cmap = plt.get_cmap("viridis")
+        #cmap_path = plt.get_cmap("YlOrRd")
+        cmap_path = plt.get_cmap("autumn_r")
+        cmap_locs = plt.get_cmap("cool")
+
+        scatter = plt.scatter([x[1] for x in op.coordinates], [x[2] for x in op.coordinates], c=op.scores, cmap=cmap_locs, zorder=10, s=150, marker="s")
+        plt.scatter([op.coordinates[1][1]], [op.coordinates[1][2]],  c="r", s=75)
+        colorbar = plt.colorbar(scatter, pad=-0.025)
+        #colorbar.set_label("Reward")
+        colorbar.ax.set_title("Reward", fontsize=16)  
+        colorbar.ax.tick_params(labelsize=16)
+        #colorbar.set_ticks(collect(range(0, 100, 10)))   
 
         x, y = [], []
         for (path, v_i, v_f) in paths
@@ -104,31 +127,30 @@ module Visual
             times, speeds = AcceleratedDubins.speed_profile(path, params, [v_i, v_f])
             speeds, times = filter_values(speeds, times)
             #Plot first curve
-            ax.plot(confx[1], confy[1], color=cmap(norm(v_i)))
+            ax.plot(confx[1], confy[1], color=cmap_path(norm(v_i)), linewidth=3)
 
             #Plot straight segment
             straightx, straighty, speeds_at_conf = sample_line(op, times, speeds, confx[2], confy[2])
             points = np.reshape(np.transpose(np.array([straightx, straighty])), (-1,1,2))
             segments = np.concatenate([points[1:end-1, :, :], points[2:end, :, :]], axis=1)
-            lc = LineCollection(segments, cmap=cmap, norm=norm)
+            lc = LineCollection(segments, cmap=cmap_path, norm=norm, linewidth=3)
             lc.set_array(speeds_at_conf)
             ax.add_collection(lc)
 
             #Plot last curve
-            ax.plot(confx[3], confy[3], color=cmap(norm(v_f)))
-        end
+            ax.plot(confx[3], confy[3], color=cmap_path(norm(v_f)), linewidth=3)
+        end 
 
-        plt.axis("equal")
-
-        scatter = plt.scatter([x[1] for x in op.coordinates], [x[2] for x in op.coordinates], c=op.scores, cmap="viridis", zorder=10)
-        plt.scatter([op.coordinates[1][1]], [op.coordinates[1][2]], zorder=15, c="r", s=75)
-        colorbar = plt.colorbar(scatter)
-        colorbar.set_label("Reward")
-
-        sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+        sm = plt.cm.ScalarMappable(cmap=cmap_path, norm=norm)
         sm.set_array(speeds)
         cbar = plt.colorbar(sm, ax=ax)
-        cbar.set_label("Speed")
+        #cbar.set_label("Speed")
+        cbar.ax.set_title("Speed", fontsize=16)
+        cbar.ax.tick_params(labelsize=16)
+        #cbar.ax.set_clim(25, 70)
+        #cbar.set_ticks(collect(range(30, 70, 8)))
+
+        fig.savefig("path.pdf", bbox_inches="tight")
     end
 
     function plot_full_speeds(op, paths)
