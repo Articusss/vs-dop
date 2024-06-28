@@ -95,19 +95,13 @@ module Visual
             confx, confy = AcceleratedDubins.sample_path(path)
             times, speeds = AcceleratedDubins.speed_profile(path, params, [v_i, v_f])
 
-            #Plot first curve
-            ax.plot(confx[1], confy[1], color=cmap_path(norm(v_i)), linewidth=3)
             confx, confy, speeds_at_conf = sample_speeds(path, speeds, times)
 
-            #Plot straight segment
             points = np.reshape(np.transpose(np.array([confx, confy])), (-1,1,2))
             segments = np.concatenate([points[1:end-1, :, :], points[2:end, :, :]], axis=1)
             lc = LineCollection(segments, cmap=cmap_path, norm=norm, linewidth=3)
             lc.set_array(speeds_at_conf)
             ax.add_collection(lc)
-
-            #Plot last curve
-            ax.plot(confx[3], confy[3], color=cmap_path(norm(v_f)), linewidth=3)
         end
 
         sm = plt.cm.ScalarMappable(cmap=cmap_path, norm=norm)
