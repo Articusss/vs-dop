@@ -82,8 +82,8 @@ module Visual
         cmap_path = plt.get_cmap("autumn_r")
         cmap_locs = plt.get_cmap("cool")
 
-        scatter = plt.scatter([x[1] for x in op.coordinates], [x[2] for x in op.coordinates], c=op.scores, cmap=cmap_locs, zorder=10, s=150, marker="s")
-        plt.scatter([op.coordinates[1][1]], [op.coordinates[1][2]],  c="r", s=75)
+        scatter = plt.scatter([x[1] for x in op.coordinates], [x[2] for x in op.coordinates], c=op.scores, cmap=cmap_locs, zorder=2, s=150, marker="s")
+        plt.scatter([op.coordinates[1][1]], [op.coordinates[1][2]],  c="g", zorder=5, s=75)
         colorbar = plt.colorbar(scatter, pad=-0.025)
         #colorbar.set_label("Reward")
         colorbar.ax.set_title("Reward", fontsize=16)  
