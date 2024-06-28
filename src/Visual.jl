@@ -3,49 +3,7 @@ module Visual
     using PyCall
     using ..AcceleratedDubins
 
-    function filter_values(v, times)
-        #Easiest example
-        if length(v) == 5
-            return v[2:4], times[2:4]
-        elseif length(v) == 4
-            return v[2:4], times[2:4] 
-        end
-        res_speed, res_time = [], []
-        starting = v[1]
-        last_time = times[1]
-        i = 2
-        while v[i] == starting
-            i += 1
-        end
-        
-        #Found segment start, append values
-        push!(res_speed, v[i-1])
-        push!(res_speed, v[i])
-        push!(res_time, times[i-1])
-        push!(res_time, times[i])
-
-        # Check if next speed is different, if its not were done (peak)
-        if v[i] != v[i+1]
-            push!(res_speed, v[i+1])
-            push!(res_time, times[i+1])
-            return res_speed, res_time
-        end
-
-        #Find end
-        starting = v[i]
-        while v[i] == starting
-            i+= 1
-        end
-
-        push!(res_speed, v[i-1])
-        push!(res_speed, v[i])
-        push!(res_time, times[i-1])
-        push!(res_time, times[i])
-
-        return res_speed, res_time
-    end
-
-    function sample_line(op, times, speeds, x_endpoints, y_endpoints, num_points = 1000)
+    function sample_line(x_endpoints, y_endpoints, num_points = 1000)
         np = pyimport("numpy")
         x1, x2 = x_endpoints
         y1, y2 = y_endpoints
@@ -55,34 +13,45 @@ module Visual
         x_points = [x1 + x * (x2 - x1) for x in t]
         y_points = [y1 + x * (y2 - y1) for x in t]
 
-        #Now calculate speed for each point
-        starting_time = times[1]
-        peak_time = times[2]
-        starting_speed = speeds[1]
-        peak_speed = speeds[2]
+        return x_points, y_points
+    end
 
-        #Discover peak distance/start
-        peak_distance = starting_speed * (peak_time - starting_time) + (op.graph.vehicle_params.a_max * (peak_time - starting_time)^2) / 2
-        mantains_peak = length(speeds) > 3
-        peak_stop = peak_distance + peak_speed * (times[3] - peak_time)
-        speed_at_conf = []
-        for i in eachindex(x_points)
-            x,y =  x_points[i], y_points[i]
-            s = sqrt((x - x1)^2 + (y - y1)^2)
-            #discover time
-            if s <= peak_distance #accelerating
-                v = np.sqrt(starting_speed^2 + 2 * op.graph.vehicle_params.a_max * s)
-            elseif mantains_peak && s <= peak_stop #Mantaining
-                v = peak_speed
-            elseif mantains_peak && s > peak_stop
-                v = np.sqrt(peak_speed^2 + 2 * op.graph.vehicle_params.a_min * (s - peak_stop))
-            else #Deaccelerating
-                v = np.sqrt(peak_speed^2 + 2 * op.graph.vehicle_params.a_min * (s - peak_distance))
-            end
-            push!(speed_at_conf, v)
+    function calculate_section_params(path, speed, times, timestamp)
+        if timestamp == length(speed)
+            return 0, Inf #Keep speed constant
         end
 
-        return x_points, y_points, speed_at_conf
+        delta_time = times[timestamp + 1] - times[timestamp]
+        delta_speed = speed[timestamp + 1] - speed[timestamp]
+        accel = delta_speed / delta_time
+        #s = s0 + vt + 1/2at^2
+        total_len = (speed[timestamp] * delta_time) + (accel * delta_time^2) / 2
+
+        return accel, total_len
+    end
+
+    function sample_speeds(path, speed, times, resolution::Float64 = 0.05)
+        points_x, points_y, speed_at_point = [], [], []
+        # Sample first arc
+        curr_timestamp = 1
+        prev_len = 0
+        curr_acc, section_len = calculate_section_params(path, speed, times, curr_timestamp)
+        
+        for l in 0.:resolution:sum(path.lengths)
+            x, y, _ = AcceleratedDubins.get_configuration(path, l)
+            push!(points_x, x)
+            push!(points_y, y)
+            #Calculate distance to reach a shift in acceleration
+            if l - prev_len >= section_len
+                curr_timestamp += 1
+                prev_len += section_len
+                curr_acc, section_len = calculate_section_params(path, speed, times, curr_timestamp)
+            end
+            #Calculate speed at point
+            v = sqrt(speed[curr_timestamp]^2 + 2 * curr_acc * (l - prev_len))
+            push!(speed_at_point, v)
+        end
+        return points_x, points_y, speed_at_point
     end
 
     function plot_full_path(op, paths)
@@ -102,20 +71,16 @@ module Visual
         for (path, v_i, v_f) in paths
             confx, confy = AcceleratedDubins.sample_path(path)
             times, speeds = AcceleratedDubins.speed_profile(path, params, [v_i, v_f])
-            speeds, times = filter_values(speeds, times)
+
             #Plot first curve
-            ax.plot(confx[1], confy[1], color=cmap(norm(v_i)))
+            confx, confy, speeds_at_conf = sample_speeds(path, speeds, times)
 
             #Plot straight segment
-            straightx, straighty, speeds_at_conf = sample_line(op, times, speeds, confx[2], confy[2])
-            points = np.reshape(np.transpose(np.array([straightx, straighty])), (-1,1,2))
+            points = np.reshape(np.transpose(np.array([confx, confy])), (-1,1,2))
             segments = np.concatenate([points[1:end-1, :, :], points[2:end, :, :]], axis=1)
             lc = LineCollection(segments, cmap=cmap, norm=norm)
             lc.set_array(speeds_at_conf)
             ax.add_collection(lc)
-
-            #Plot last curve
-            ax.plot(confx[3], confy[3], color=cmap(norm(v_f)))
         end
 
         plt.axis("equal")
