@@ -778,6 +778,9 @@ function speed_profile(path::DubinsPathR2, v_min::Number, v_max::Number, a1::Flo
             time += lengths[3] / speeds[3]
             push_vals(time, speeds[3])
         elseif sp_down_finish_len > lengths[2] && sp_down_finish_len < (lengths[1] + lengths[2])
+            time -= lengths[1] / speeds[1]
+            pop!(times)
+            pop!(speed_at_time)
             time += (lengths[1] + lengths[2] - sp_down_finish_len) / speeds[1]
             push_vals(time, speeds[1])
             time += sp_down_finish
