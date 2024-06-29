@@ -362,19 +362,17 @@ module VsDop
 
     function bulk_benchmark(configurations, run_per_config, base_path, instance_list, exec_time)
         #configurations is a vector of (num_speeds, num_heading angles)
-        #TODO remove temp code
-        vehicle_params = [VehicleParameters(30., 30., -3., 2., 65.7, 264.2), VehicleParameters(66.98, 66.98, -3., 2., 65.7, 264.2)]
         for inst in instance_list
             points, scores, depots, tmax = Helper.read_op_file("$base_path/$inst")
-            for v_params in vehicle_params
-                graph_params = DOPGraph(2, 8, 8, length(points), v_params)
+            for (speeds, headings) in configurations
+                graph_params = DOPGraph(speeds, headings, 8, length(points), get_cessna172_params())
                 op = OpParameters(compute_trajectories(points, graph_params), points, scores, depots, tmax)
                 res, best_seqs, best_scores, best_times, best_idx = benchmark(op, run_per_config, exec_time)
 
-                dir = "results/CONST$(v_params.v_max)v"
+                dir = "results/$(speeds)v$(headings)h"
                 isdir(dir) || mkdir(dir)
                 #Write to file
-                
+
                 f = open("$dir/$inst", "w")
                 println(f, "BEST_SCORE = $(maximum(best_scores))")
                 println(f, "BEST_TIME = $(best_times[best_idx])")
@@ -385,7 +383,7 @@ module VsDop
                 println(f, "R_BEST_TRAVELTIMES = $(res[best_idx].travel_times)")
                 println(f, "R_BEST_TIMESTAMPS = $(res[best_idx].timestamps)")
                 close(f)
-                
+
             end
         end
     end
